@@ -1,32 +1,30 @@
-// news-image-20261119 entry (Node 22, standard library only).
-//
-// The image is drawn in advance and shipped beside this file as entry.png:
-// a one-page broadsheet, "The World Today", summing up Thursday
-// 19 November 2026 in 45 stories across six continents. This program's
-// only job is to place an exact copy of it at /output/entry.png.
-//
-// Outside the grader's container, MAKEFUN_OUTPUT_DIR stands in for /output:
-//   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
+// news-image-20261119 v2 entrypoint.
+// Copies the finished broadsheet image to the output directory.
+// No network, no randomness: every run writes the same bytes.
+import { copyFileSync, mkdirSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-import { copyFileSync, readFileSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+const outDir = process.env.MAKEFUN_OUTPUT_DIR ?? "/output";
+const here = dirname(fileURLToPath(import.meta.url));
+const dest = join(outDir, "entry.png");
 
-const source = new URL('./entry.png', import.meta.url);
-const dest = join(process.env.MAKEFUN_OUTPUT_DIR ?? '/output', 'entry.png');
+mkdirSync(outDir, { recursive: true });
+copyFileSync(join(here, "entry.png"), dest);
 
-// The gate caps the file at 1 MiB: refuse to ship an oversized image.
-const bytes = statSync(source).size;
-if (bytes > 1048576) {
-  throw new Error(`entry.png is ${bytes} bytes, over the 1 MiB cap`);
+// Verify what we wrote, so a corrupt or oversized file fails loudly
+// instead of reaching the judge: PNG signature, <= 1 MiB, <= 1024x1024.
+const buf = readFileSync(dest);
+const pngSig = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+if (!buf.subarray(0, 8).equals(pngSig)) {
+  throw new Error("entry.png is not a PNG");
 }
-
-copyFileSync(source, dest);
-
-// Verify the copy before exiting: same size, and the PNG signature intact,
-// so a truncated write fails loudly here instead of at the gate.
-const copied = statSync(dest).size;
-const head = readFileSync(dest).subarray(0, 8);
-const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-if (copied !== bytes || !head.equals(PNG_MAGIC)) {
-  throw new Error(`copy of entry.png failed verification (${copied} bytes)`);
+if (buf.length > 1048576) {
+  throw new Error(`entry.png over 1 MiB: ${buf.length} bytes`);
 }
+const width = buf.readUInt32BE(16);
+const height = buf.readUInt32BE(20);
+if (width > 1024 || height > 1024) {
+  throw new Error(`entry.png over 1024x1024: ${width}x${height}`);
+}
+console.log(`entry.png OK: ${width}x${height}, ${buf.length} bytes`);
